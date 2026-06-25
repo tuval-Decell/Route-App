@@ -5,15 +5,13 @@ import requests
 import xml.etree.ElementTree as ET
 from geopy.geocoders import Nominatim
 import pandas as pd
-import math
 
 # --- הגדרות ---
 BASE_URL = "http://routing.decell.com:8080/route"
-CSV_FILE_PATH = "database.csv"  # שים לב: הקובץ צריך להיות באותה תיקייה עם הקוד
+CSV_FILE_PATH = "mini_database.csv"
 ID_COLUMN_NAME = "UserID"
 COLUMNS_TO_DISPLAY = ["RoadFuncti", "RoadType", "Flag"]
 
-# הגדרת עמוד האפליקציה (שייפתח על כל המסך)
 st.set_page_config(page_title="Route Generator", layout="wide")
 
 
@@ -26,17 +24,15 @@ def clean_id(val):
         return str(val).strip()
 
 
-@st.cache_data  # פקודה ששומרת את בסיס הנתונים בזיכרון של השרת
+@st.cache_data
 def load_database():
     encodings_to_try = ['utf-8-sig', 'cp1255', 'latin-1']
     for enc in encodings_to_try:
         try:
-            # שימוש ב-Pandas שהיא הרבה יותר מהירה ומתאימה לאינטרנט
             df = pd.read_csv(CSV_FILE_PATH, encoding=enc, dtype=str)
             df.columns = df.columns.str.strip()
             if ID_COLUMN_NAME in df.columns:
                 df[ID_COLUMN_NAME] = df[ID_COLUMN_NAME].apply(clean_id)
-                # הופכים את עמודת ה-ID למפתח החיפוש שלנו
                 df.set_index(ID_COLUMN_NAME, inplace=True)
                 return df
         except Exception:
@@ -53,6 +49,7 @@ if 'map_center' not in st.session_state: st.session_state.map_center = [31.5, 34
 if 'map_zoom' not in st.session_state: st.session_state.map_zoom = 7
 if 'paths_to_draw' not in st.session_state: st.session_state.paths_to_draw = []
 if 'route_summary' not in st.session_state: st.session_state.route_summary = None
+if 'last_clicked' not in st.session_state: st.session_state.last_clicked = None  # מעקב אחרי קליקים חדשים
 
 # --- ממשק משתמש (תפריט צד) ---
 st.sidebar.title("הגדרות ניווט 🗺️")
@@ -70,23 +67,20 @@ if st.sidebar.button("חפש במפה"):
         st.sidebar.error("הכתובת לא נמצאה.")
 
 st.sidebar.markdown("---")
-st.sidebar.markdown("**איך לדקור נקודות?**\nלחץ על המפה, והקואורדינטות יופיעו למטה. העתק אותן למוצא או ליעד.")
+st.sidebar.markdown("**📍 בחירת נקודות מהמפה**")
 
-start_lat_lon = st.sidebar.text_input("קואורדינטות מוצא (Lat, Lon):",
-                                      value=f"{st.session_state.start_coords[0]}, {st.session_state.start_coords[1]}" if st.session_state.start_coords else "")
-end_lat_lon = st.sidebar.text_input("קואורדינטות יעד (Lat, Lon):",
-                                    value=f"{st.session_state.end_coords[0]}, {st.session_state.end_coords[1]}" if st.session_state.end_coords else "")
+# בורר מצב דקירה חדש
+click_mode = st.sidebar.radio(
+    "בחר מה ברצונך לדקור:",
+    ["צפייה בלבד", "🟢 קבע נקודת מוצא", "🔴 קבע נקודת יעד"]
+)
 
-# עדכון מקביעי מוצא ויעד מהטקסט
-try:
-    if start_lat_lon:
-        parts = start_lat_lon.split(',')
-        st.session_state.start_coords = [float(parts[0].strip()), float(parts[1].strip())]
-    if end_lat_lon:
-        parts = end_lat_lon.split(',')
-        st.session_state.end_coords = [float(parts[0].strip()), float(parts[1].strip())]
-except Exception:
-    pass
+# תצוגה יפה של הנקודות שנבחרו (במקום שדות טקסט ארוכים)
+start_text = f"{st.session_state.start_coords[0]:.4f}, {st.session_state.start_coords[1]:.4f}" if st.session_state.start_coords else "לא נבחר"
+end_text = f"{st.session_state.end_coords[0]:.4f}, {st.session_state.end_coords[1]:.4f}" if st.session_state.end_coords else "לא נבחר"
+
+st.sidebar.success(f"מוצא: {start_text}")
+st.sidebar.error(f"יעד: {end_text}")
 
 if st.sidebar.button("⇅ החלף כיוון"):
     st.session_state.start_coords, st.session_state.end_coords = st.session_state.end_coords, st.session_state.start_coords
@@ -112,7 +106,6 @@ if st.sidebar.button("🚀 הצג מסלול", type="primary"):
             paths = []
             all_lats, all_lons = [], []
 
-            # חילוץ סיכום מסלול
             for elem in root_xml.iter():
                 if 'description' in elem.tag and elem.text and "distanceMeters" in elem.text:
                     parts = elem.text.split(',')
@@ -128,7 +121,6 @@ if st.sidebar.button("🚀 הצג מסלול", type="primary"):
                     }
                     break
 
-            # חילוץ המסלול וחיבור לבסיס הנתונים
             for placemark in root_xml.iter():
                 if 'Placemark' in placemark.tag:
                     segment_name = "ללא שם"
@@ -146,13 +138,12 @@ if st.sidebar.button("🚀 הצג מסלול", type="primary"):
                             for point in coords_text:
                                 p_parts = point.split(',')
                                 if len(p_parts) >= 2:
-                                    lat, lon = float(p_parts[1]), float(p_parts[0])  # Folium uses (Lat, Lon)
+                                    lat, lon = float(p_parts[1]), float(p_parts[0])
                                     path_coords.append((lat, lon))
                                     all_lats.append(lat)
                                     all_lons.append(lon)
 
                             if path_coords:
-                                # בניית טקסט קופצת (Tooltip)
                                 tooltip_html = f"<b>מזהה:</b> {segment_name}<br>"
                                 if not db_data.empty and segment_name_clean in db_data.index:
                                     row = db_data.loc[segment_name_clean]
@@ -181,20 +172,31 @@ if st.session_state.route_summary:
 # יצירת המפה
 m = folium.Map(location=st.session_state.map_center, zoom_start=st.session_state.map_zoom)
 
-# סמני מוצא ויעד
 if st.session_state.start_coords:
     folium.Marker(st.session_state.start_coords, tooltip="מוצא", icon=folium.Icon(color="green")).add_to(m)
 if st.session_state.end_coords:
     folium.Marker(st.session_state.end_coords, tooltip="יעד", icon=folium.Icon(color="red")).add_to(m)
 
-# ציור המסלולים והוספת המידע המרחף
 for p in st.session_state.paths_to_draw:
     folium.PolyLine(p["coords"], color="purple", weight=5, tooltip=p["tooltip"]).add_to(m)
 
 # הצגת המפה באתר ותפיסת לחיצות
 map_data = st_folium(m, height=500, width=1000)
 
+# --- לוגיקת לכידת הלחיצות על המפה ---
 if map_data and map_data.get("last_clicked"):
-    clicked_lat = map_data["last_clicked"]["lat"]
-    clicked_lon = map_data["last_clicked"]["lng"]
-    st.info(f"📍 קליק אחרון במפה: `{clicked_lat}, {clicked_lon}` (אפשר להעתיק לתפריט בצד)")
+    current_click = map_data["last_clicked"]
+
+    # בודקים אם מדובר בלחיצה חדשה שעוד לא עיבדנו
+    if current_click != st.session_state.last_clicked:
+        st.session_state.last_clicked = current_click
+        lat = current_click["lat"]
+        lon = current_click["lng"]
+
+        # מעדכנים את המוצא או היעד לפי מה שמסומן בבורר
+        if click_mode == "🟢 קבע נקודת מוצא":
+            st.session_state.start_coords = [lat, lon]
+            st.rerun()  # מרפרש את המפה מיד כדי להראות את הסמן
+        elif click_mode == "🔴 קבע נקודת יעד":
+            st.session_state.end_coords = [lat, lon]
+            st.rerun()  # מרפרש את המפה מיד כדי להראות את הסמן
