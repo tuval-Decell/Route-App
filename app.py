@@ -8,7 +8,7 @@ import pandas as pd
 
 # --- הגדרות ---
 BASE_URL = "http://routing.decell.com:8080/route"
-CSV_FILE_PATH = "mini_database.csv"
+CSV_FILE_PATH = "database.csv"
 ID_COLUMN_NAME = "UserID"
 COLUMNS_TO_DISPLAY = ["RoadFuncti", "RoadType", "Flag"]
 
