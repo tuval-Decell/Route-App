@@ -33,6 +33,8 @@ def load_database():
             df.columns = df.columns.str.strip()
             if ID_COLUMN_NAME in df.columns:
                 df[ID_COLUMN_NAME] = df[ID_COLUMN_NAME].apply(clean_id)
+                # מניעת כפילויות במזהים כדי למנוע שגיאות שליפה
+                df.drop_duplicates(subset=[ID_COLUMN_NAME], keep='first', inplace=True)
                 df.set_index(ID_COLUMN_NAME, inplace=True)
                 return df
         except Exception:
@@ -45,37 +47,46 @@ db_data = load_database()
 # --- ניהול זיכרון של האפליקציה (Session State) ---
 if 'start_coords' not in st.session_state: st.session_state.start_coords = None
 if 'end_coords' not in st.session_state: st.session_state.end_coords = None
+if 'search_coords' not in st.session_state: st.session_state.search_coords = None  # סמן החיפוש חזר!
 if 'map_center' not in st.session_state: st.session_state.map_center = [31.5, 34.8]
 if 'map_zoom' not in st.session_state: st.session_state.map_zoom = 7
 if 'paths_to_draw' not in st.session_state: st.session_state.paths_to_draw = []
 if 'route_summary' not in st.session_state: st.session_state.route_summary = None
-if 'last_clicked' not in st.session_state: st.session_state.last_clicked = None  # מעקב אחרי קליקים חדשים
+if 'last_clicked' not in st.session_state: st.session_state.last_clicked = None
 
 # --- ממשק משתמש (תפריט צד) ---
 st.sidebar.title("הגדרות ניווט 🗺️")
+
+# חיווי סטטוס מסד הנתונים
+if not db_data.empty:
+    st.sidebar.success(f"✅ מסד נתונים מחובר ({len(db_data)} רשומות)")
+else:
+    st.sidebar.error("❌ לא נמצאו נתונים בקובץ ה-CSV")
 
 # חיפוש כתובת
 search_query = st.sidebar.text_input("חפש עיר או כתובת:")
 if st.sidebar.button("חפש במפה"):
     geolocator = Nominatim(user_agent="web_route_app")
-    location = geolocator.geocode(search_query)
-    if location:
-        st.session_state.map_center = [location.latitude, location.longitude]
-        st.session_state.map_zoom = 14
-        st.sidebar.success("הכתובת נמצאה!")
-    else:
-        st.sidebar.error("הכתובת לא נמצאה.")
+    try:
+        location = geolocator.geocode(search_query)
+        if location:
+            st.session_state.map_center = [location.latitude, location.longitude]
+            st.session_state.map_zoom = 15
+            st.session_state.search_coords = [location.latitude, location.longitude]  # שמירת מיקום החיפוש
+            st.sidebar.success("הכתובת נמצאה!")
+        else:
+            st.sidebar.error("הכתובת לא נמצאה.")
+    except Exception as e:
+        st.sidebar.error(f"שגיאת חיפוש: {e}")
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("**📍 בחירת נקודות מהמפה**")
 
-# בורר מצב דקירה חדש
 click_mode = st.sidebar.radio(
     "בחר מה ברצונך לדקור:",
     ["צפייה בלבד", "🟢 קבע נקודת מוצא", "🔴 קבע נקודת יעד"]
 )
 
-# תצוגה יפה של הנקודות שנבחרו (במקום שדות טקסט ארוכים)
 start_text = f"{st.session_state.start_coords[0]:.4f}, {st.session_state.start_coords[1]:.4f}" if st.session_state.start_coords else "לא נבחר"
 end_text = f"{st.session_state.end_coords[0]:.4f}, {st.session_state.end_coords[1]:.4f}" if st.session_state.end_coords else "לא נבחר"
 
@@ -93,6 +104,8 @@ if st.sidebar.button("🚀 הצג מסלול", type="primary"):
     if not st.session_state.start_coords or not st.session_state.end_coords:
         st.sidebar.warning("חסר מוצא או יעד!")
     else:
+        st.session_state.search_coords = None  # העלמת סמן החיפוש ברגע יצירת מסלול
+
         params = {
             "fromLat": st.session_state.start_coords[0], "fromLon": st.session_state.start_coords[1],
             "toLat": st.session_state.end_coords[0], "toLon": st.session_state.end_coords[1],
@@ -169,8 +182,15 @@ if st.session_state.route_summary:
     st.success(
         f"🏁 **מרחק מסלול:** {st.session_state.route_summary['km']} ק\"מ &nbsp; | &nbsp; ⏱️ **זמן משוער:** {st.session_state.route_summary['mins']} דקות")
 
-# יצירת המפה
 m = folium.Map(location=st.session_state.map_center, zoom_start=st.session_state.map_zoom)
+
+# הצגת סמן חיפוש אפור אם קיים
+if st.session_state.search_coords:
+    folium.Marker(
+        st.session_state.search_coords,
+        tooltip="תוצאת חיפוש",
+        icon=folium.Icon(color="gray", icon="info-sign")
+    ).add_to(m)
 
 if st.session_state.start_coords:
     folium.Marker(st.session_state.start_coords, tooltip="מוצא", icon=folium.Icon(color="green")).add_to(m)
@@ -180,23 +200,19 @@ if st.session_state.end_coords:
 for p in st.session_state.paths_to_draw:
     folium.PolyLine(p["coords"], color="purple", weight=5, tooltip=p["tooltip"]).add_to(m)
 
-# הצגת המפה באתר ותפיסת לחיצות
 map_data = st_folium(m, height=500, width=1000)
 
-# --- לוגיקת לכידת הלחיצות על המפה ---
 if map_data and map_data.get("last_clicked"):
     current_click = map_data["last_clicked"]
 
-    # בודקים אם מדובר בלחיצה חדשה שעוד לא עיבדנו
     if current_click != st.session_state.last_clicked:
         st.session_state.last_clicked = current_click
         lat = current_click["lat"]
         lon = current_click["lng"]
 
-        # מעדכנים את המוצא או היעד לפי מה שמסומן בבורר
         if click_mode == "🟢 קבע נקודת מוצא":
             st.session_state.start_coords = [lat, lon]
-            st.rerun()  # מרפרש את המפה מיד כדי להראות את הסמן
+            st.rerun()
         elif click_mode == "🔴 קבע נקודת יעד":
             st.session_state.end_coords = [lat, lon]
-            st.rerun()  # מרפרש את המפה מיד כדי להראות את הסמן
+            st.rerun()
