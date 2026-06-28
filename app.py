@@ -9,6 +9,7 @@ import pandas as pd
 # --- הגדרת עמוד האפליקציה (חייבת להיות פקודת ה-Streamlit הראשונה) ---
 st.set_page_config(page_title="Decell Route Generator", page_icon="🚗", layout="wide")
 
+
 # ==========================================
 # --- מנגנון התחברות (Login) ---
 # ==========================================
@@ -20,17 +21,15 @@ def check_password():
         username = st.session_state["username"].strip().lower()
         password = st.session_state["password"]
 
-        # בודק אם השם קיים ב-Secrets ואם הסיסמה תואמת
         if "passwords" in st.secrets and username in st.secrets["passwords"] and str(
                 st.secrets["passwords"][username]) == str(password):
             st.session_state["password_correct"] = True
-            st.session_state["logged_in_user"] = username  # שמירת שם המשתמש לברכת שלום
-            del st.session_state["password"]  # מוחק את הסיסמה מהזיכרון לאבטחה
+            st.session_state["logged_in_user"] = username
+            del st.session_state["password"]
         else:
             st.session_state["password_correct"] = False
 
     if "password_correct" not in st.session_state:
-        # מצב התחלתי: הצגת טופס התחברות
         st.title("התחברות למערכת הניווט 🔒")
         st.text_input("שם משתמש", key="username")
         st.text_input("סיסמה", type="password", key="password")
@@ -38,7 +37,6 @@ def check_password():
         return False
 
     elif not st.session_state["password_correct"]:
-        # מצב שגיאה: סיסמה לא נכונה
         st.title("התחברות למערכת הניווט 🔒")
         st.text_input("שם משתמש", key="username")
         st.text_input("סיסמה", type="password", key="password")
@@ -47,10 +45,9 @@ def check_password():
         return False
 
     else:
-        # מצב מחובר: אפשר להמשיך!
         return True
 
-# --- עצירת הקוד אם המשתמש לא מחובר ---
+
 if not check_password():
     st.stop()
 
@@ -62,6 +59,7 @@ CSV_FILE_PATH = "database.csv"
 ID_COLUMN_NAME = "UserID"
 COLUMNS_TO_DISPLAY = ["RoadFuncti", "RoadType", "Flag"]
 
+
 # --- פונקציות עזר וטעינת נתונים ---
 def clean_id(val):
     try:
@@ -69,6 +67,7 @@ def clean_id(val):
         return str(abs(int(float(val))))
     except (ValueError, TypeError):
         return str(val).strip()
+
 
 @st.cache_data
 def load_database():
@@ -90,6 +89,7 @@ def load_database():
             continue
     return pd.DataFrame()
 
+
 db_data = load_database()
 
 # --- ניהול זיכרון של האפליקציה (Session State) ---
@@ -102,7 +102,9 @@ if 'paths_to_draw' not in st.session_state: st.session_state.paths_to_draw = []
 if 'route_summary' not in st.session_state: st.session_state.route_summary = None
 if 'last_clicked' not in st.session_state: st.session_state.last_clicked = None
 if 'route_history' not in st.session_state: st.session_state.route_history = []
-if 'route_error' not in st.session_state: st.session_state.route_error = None # משתנה חדש לשמירת השגיאות
+if 'route_error' not in st.session_state: st.session_state.route_error = None
+if 'click_mode_state' not in st.session_state: st.session_state.click_mode_state = "צפייה בלבד"  # זיכרון לבחירת הרדיו
+
 
 # --- פונקציה להוספת מסלול להיסטוריה ---
 def add_to_history(start, end, summary, paths, center, zoom):
@@ -121,17 +123,12 @@ def add_to_history(start, end, summary, paths, center, zoom):
     if len(st.session_state.route_history) > 5:
         st.session_state.route_history.pop()
 
+
 # --- ממשק משתמש (תפריט צד) ---
 st.sidebar.title("הגדרות ניווט 🗺️")
 
 current_user = st.session_state.get("logged_in_user", "אורח")
 st.sidebar.markdown(f"👋 שלום, **{current_user.capitalize()}**")
-
-#אם רוצים לדעת אם הdatabase נטען, אז להוריד את הסולמיות
-#if not db_data.empty:
-#    st.sidebar.success(f"✅ מסד נתונים מחובר ({len(db_data)} רשומות)")
-#else:
-#    st.sidebar.error("❌ לא נמצאו נתונים בקובץ ה-CSV")
 
 # חיפוש כתובת
 search_query = st.sidebar.text_input("חפש עיר או כתובת:")
@@ -152,9 +149,11 @@ if st.sidebar.button("חפש במפה"):
 st.sidebar.markdown("---")
 st.sidebar.markdown("**📍 בחירת נקודות מהמפה**")
 
-click_mode = st.sidebar.radio(
+# חיבור הרדיו לזיכרון באמצעות key
+st.sidebar.radio(
     "בחר מה ברצונך לדקור:",
-    ["צפייה בלבד", "🟢 קבע נקודת מוצא", "🔴 קבע נקודת יעד"]
+    ["צפייה בלבד", "🟢 קבע נקודת מוצא", "🔴 קבע נקודת יעד"],
+    key="click_mode_state"
 )
 
 start_text = f"{st.session_state.start_coords[0]:.4f}, {st.session_state.start_coords[1]:.4f}" if st.session_state.start_coords else "לא נבחר"
@@ -167,7 +166,7 @@ if st.sidebar.button("⇅ החלף כיוון"):
     st.session_state.start_coords, st.session_state.end_coords = st.session_state.end_coords, st.session_state.start_coords
     st.session_state.paths_to_draw = []
     st.session_state.route_summary = None
-    st.session_state.route_error = None # ניקוי שגיאות בהחלפת כיוון
+    st.session_state.route_error = None
     st.rerun()
 
 # --- תצוגת היסטוריית מסלולים בתפריט הצד ---
@@ -189,7 +188,8 @@ if st.session_state.route_history:
                 st.session_state.map_center = hist_route["center"]
                 st.session_state.map_zoom = hist_route["zoom"]
                 st.session_state.search_coords = None
-                st.session_state.route_error = None # ניקוי שגיאות בעת טעינת היסטוריה
+                st.session_state.route_error = None
+                st.session_state.click_mode_state = "צפייה בלבד"  # איפוס גם בטעינת היסטוריה
                 st.rerun()
 
 # --- לוגיקת יצירת מסלול ---
@@ -198,7 +198,7 @@ if st.sidebar.button("🚀 הצג מסלול", type="primary"):
         st.sidebar.warning("חסר מוצא או יעד!")
     else:
         st.session_state.search_coords = None
-        st.session_state.route_error = None # איפוס שגיאות קודמות בכל ניסיון חדש
+        st.session_state.route_error = None
 
         params = {
             "fromLat": st.session_state.start_coords[0], "fromLon": st.session_state.start_coords[1],
@@ -277,6 +277,9 @@ if st.sidebar.button("🚀 הצג מסלול", type="primary"):
                     st.session_state.map_center,
                     st.session_state.map_zoom
                 )
+
+            # --- איפוס הרדיו לאחר מציאת מסלול בהצלחה ---
+            st.session_state.click_mode_state = "צפייה בלבד"
             st.rerun()
 
         except requests.exceptions.ConnectionError:
@@ -292,18 +295,19 @@ if st.sidebar.button("🚀 הצג מסלול", type="primary"):
 st.image("Decelllogo.jpg", width=200)
 st.title("Decell Route Generator")
 
-# הצגת שגיאת תקשורת מהזיכרון במידה וישנה (קבוע על המסך עד לניסיון חדש)
 if st.session_state.route_error:
     if st.session_state.route_error == "connection":
-        st.error("**מצטערים, שרת הניווט לא מחובר כרגע.**\n\nאנא נסו שוב מאוחר יותר.")
+        st.error("**מצטערים, שרת הניווט לא מחובר כרגע.**\n\nאנא ודאו שהשרת של Decell פועל ונסו שוב מאוחר יותר.")
     elif st.session_state.route_error == "timeout":
-        st.error("**הבקשה לשרת הניווט לקחה יותר מדי זמן (Timeout).**\n\nייתכן שהשרת עמוס, מנותק, או שהמסלול ארוך מדי לחישוב כרגע.")
+        st.error(
+            "**הבקשה לשרת הניווט לקחה יותר מדי זמן (Timeout).**\n\nייתכן שהשרת עמוס, מנותק, או שהמסלול ארוך מדי לחישוב כרגע.")
     else:
         actual_error = st.session_state.route_error.replace("general_", "")
         st.error(f"❌ שגיאה כללית בעיבוד המסלול: {actual_error}")
 
 if st.session_state.route_summary:
-    st.success(f"🏁 **מרחק מסלול:** {st.session_state.route_summary['km']} ק\"מ &nbsp; | &nbsp; ⏱️ **זמן משוער:** {st.session_state.route_summary['mins']} דקות")
+    st.success(
+        f"🏁 **מרחק מסלול:** {st.session_state.route_summary['km']} ק\"מ &nbsp; | &nbsp; ⏱️ **זמן משוער:** {st.session_state.route_summary['mins']} דקות")
 
 m = folium.Map(location=st.session_state.map_center, zoom_start=st.session_state.map_zoom)
 
@@ -333,11 +337,12 @@ if map_data and map_data.get("last_clicked"):
         lat = current_click["lat"]
         lon = current_click["lng"]
 
-        if click_mode == "🟢 קבע נקודת מוצא":
+        # בדיקה מול הזיכרון החדש של הרדיו
+        if st.session_state.click_mode_state == "🟢 קבע נקודת מוצא":
             st.session_state.start_coords = [lat, lon]
-            st.session_state.route_error = None # ניקוי השגיאה כדי שההודעה תעלם
+            st.session_state.route_error = None
             st.rerun()
-        elif click_mode == "🔴 קבע נקודת יעד":
+        elif st.session_state.click_mode_state == "🔴 קבע נקודת יעד":
             st.session_state.end_coords = [lat, lon]
-            st.session_state.route_error = None # ניקוי השגיאה כדי שההודעה תעלם
+            st.session_state.route_error = None
             st.rerun()
