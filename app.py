@@ -103,10 +103,10 @@ if 'route_summary' not in st.session_state: st.session_state.route_summary = Non
 if 'last_clicked' not in st.session_state: st.session_state.last_clicked = None
 if 'route_history' not in st.session_state: st.session_state.route_history = []
 if 'route_error' not in st.session_state: st.session_state.route_error = None
-if 'click_mode_state' not in st.session_state: st.session_state.click_mode_state = "צפייה בלבד"  # זיכרון לבחירת הרדיו
+if 'click_mode_state' not in st.session_state: st.session_state.click_mode_state = "צפייה בלבד"
 
 
-# --- פונקציה להוספת מסלול להיסטוריה ---
+# --- פונקציות Callback (לפני ריצת הממשק) ---
 def add_to_history(start, end, summary, paths, center, zoom):
     new_route = {
         "start": start,
@@ -122,6 +122,11 @@ def add_to_history(start, end, summary, paths, center, zoom):
     st.session_state.route_history.insert(0, new_route)
     if len(st.session_state.route_history) > 5:
         st.session_state.route_history.pop()
+
+
+def reset_radio_to_view():
+    """פונקציה שנקראת רגע לפני שהכפתור מופעל ומאפסת את הרדיו"""
+    st.session_state.click_mode_state = "צפייה בלבד"
 
 
 # --- ממשק משתמש (תפריט צד) ---
@@ -180,7 +185,8 @@ if st.session_state.route_history:
             sm = hist_route["summary"]
             st.write(f"**מסלול {idx + 1}:** {sm['km']} ק\"מ ({sm['mins']} דק')")
         with col_btn:
-            if st.button("טען 🔄", key=f"hist_{idx}"):
+            # שימוש ב-Callback כדי לאפס את הרדיו בלחיצה על 'טען'
+            if st.button("טען 🔄", key=f"hist_{idx}", on_click=reset_radio_to_view):
                 st.session_state.start_coords = hist_route["start"]
                 st.session_state.end_coords = hist_route["end"]
                 st.session_state.route_summary = hist_route["summary"]
@@ -189,11 +195,11 @@ if st.session_state.route_history:
                 st.session_state.map_zoom = hist_route["zoom"]
                 st.session_state.search_coords = None
                 st.session_state.route_error = None
-                st.session_state.click_mode_state = "צפייה בלבד"  # איפוס גם בטעינת היסטוריה
                 st.rerun()
 
 # --- לוגיקת יצירת מסלול ---
-if st.sidebar.button("🚀 הצג מסלול", type="primary"):
+# שימוש ב-Callback כדי לאפס את הרדיו בלחיצה על 'הצג מסלול'
+if st.sidebar.button("🚀 הצג מסלול", type="primary", on_click=reset_radio_to_view):
     if not st.session_state.start_coords or not st.session_state.end_coords:
         st.sidebar.warning("חסר מוצא או יעד!")
     else:
@@ -278,8 +284,6 @@ if st.sidebar.button("🚀 הצג מסלול", type="primary"):
                     st.session_state.map_zoom
                 )
 
-            # --- איפוס הרדיו לאחר מציאת מסלול בהצלחה ---
-            st.session_state.click_mode_state = "צפייה בלבד"
             st.rerun()
 
         except requests.exceptions.ConnectionError:
@@ -337,7 +341,6 @@ if map_data and map_data.get("last_clicked"):
         lat = current_click["lat"]
         lon = current_click["lng"]
 
-        # בדיקה מול הזיכרון החדש של הרדיו
         if st.session_state.click_mode_state == "🟢 קבע נקודת מוצא":
             st.session_state.start_coords = [lat, lon]
             st.session_state.route_error = None
