@@ -214,7 +214,7 @@ if st.sidebar.button("🚀 הצג מסלול", type="primary"):
             "format": "kml"
         }
         try:
-            response = requests.get(BASE_URL, params=params)
+            response = requests.get(BASE_URL, params=params, timeout=8)
             response.raise_for_status()
             root_xml = ET.fromstring(response.content)
 
@@ -290,8 +290,23 @@ if st.sidebar.button("🚀 הצג מסלול", type="primary"):
                 )
             st.rerun()  # ריענון מיידי להצגת ההיסטוריה החדשה בצד
 
+
+        except requests.exceptions.ConnectionError:
+
+            st.toast("🚫 שרת הניווט מנותק", icon="🚫")
+
+            st.error("**מצטערים, שרת הניווט לא מחובר כרגע.**\n\nאנא ודאו שהשרת של Decell פועל ונסו שוב מאוחר יותר.")
+
+        except requests.exceptions.Timeout:
+
+            st.toast("⏳ השרת לא מגיב", icon="⏳")
+
+            st.error(
+                "**הבקשה לשרת הניווט לקחה יותר מדי זמן (Timeout).**\n\nייתכן שהשרת עמוס, מנותק, או שהמסלול ארוך מדי לחישוב כרגע.")
+
         except Exception as e:
-            st.sidebar.error(f"שגיאה בתקשורת או בעיבוד: {e}")
+
+            st.error(f"❌ שגיאה כללית בעיבוד המסלול: {e}")
 
 # --- תצוגת אזור מרכזי ---
 st.image("Decelllogo.jpg", width=200)
