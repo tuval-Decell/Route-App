@@ -127,10 +127,11 @@ st.sidebar.title("הגדרות ניווט 🗺️")
 current_user = st.session_state.get("logged_in_user", "אורח")
 st.sidebar.markdown(f"👋 שלום, **{current_user.capitalize()}**")
 
-if not db_data.empty:
-    st.sidebar.success(f"✅ מסד נתונים מחובר ({len(db_data)} רשומות)")
-else:
-    st.sidebar.error("❌ לא נמצאו נתונים בקובץ ה-CSV")
+#אם רוצים לדעת אם הdatabase נטען, אז להוריד את הסולמיות
+#if not db_data.empty:
+#    st.sidebar.success(f"✅ מסד נתונים מחובר ({len(db_data)} רשומות)")
+#else:
+#    st.sidebar.error("❌ לא נמצאו נתונים בקובץ ה-CSV")
 
 # חיפוש כתובת
 search_query = st.sidebar.text_input("חפש עיר או כתובת:")
