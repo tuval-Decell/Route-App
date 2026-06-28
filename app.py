@@ -294,7 +294,7 @@ st.title("Decell Route Generator")
 # הצגת שגיאת תקשורת מהזיכרון במידה וישנה (קבוע על המסך עד לניסיון חדש)
 if st.session_state.route_error:
     if st.session_state.route_error == "connection":
-        st.error("**מצטערים, שרת הניווט לא מחובר כרגע.**\n\nאנא ודאו שהשרת של Decell פועל ונסו שוב מאוחר יותר.")
+        st.error("**מצטערים, שרת הניווט לא מחובר כרגע.**\n\nאנא נסו שוב מאוחר יותר.")
     elif st.session_state.route_error == "timeout":
         st.error("**הבקשה לשרת הניווט לקחה יותר מדי זמן (Timeout).**\n\nייתכן שהשרת עמוס, מנותק, או שהמסלול ארוך מדי לחישוב כרגע.")
     else:
