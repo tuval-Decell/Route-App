@@ -7,7 +7,7 @@ from geopy.geocoders import Nominatim
 import pandas as pd
 
 # --- הגדרת עמוד האפליקציה (חייבת להיות פקודת ה-Streamlit הראשונה) ---
-st.set_page_config(page_title="Route Generator", layout="wide")
+st.set_page_config(page_title="Decell Route Generator", page_icon="🚗", layout="wide")
 
 
 # ==========================================
@@ -294,7 +294,8 @@ if st.sidebar.button("🚀 הצג מסלול", type="primary"):
             st.sidebar.error(f"שגיאה בתקשורת או בעיבוד: {e}")
 
 # --- תצוגת אזור מרכזי ---
-st.title("מערכת ניווט ומידע GIS 🌍")
+st.image("Decelllogo.jpg", width=200)
+st.title("Decell Route Generator")
 
 if st.session_state.route_summary:
     st.success(
