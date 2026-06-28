@@ -6,13 +6,63 @@ import xml.etree.ElementTree as ET
 from geopy.geocoders import Nominatim
 import pandas as pd
 
-# --- הגדרות ---
+# --- הגדרת עמוד האפליקציה (חייבת להיות פקודת ה-Streamlit הראשונה) ---
+st.set_page_config(page_title="Route Generator", layout="wide")
+
+
+# ==========================================
+# --- מנגנון התחברות (Login) ---
+# ==========================================
+def check_password():
+    """מחזיר True אם המשתמש הזין סיסמה נכונה."""
+
+    def password_entered():
+        """בודק את הסיסמה שהוזנה."""
+        username = st.session_state["username"].strip().lower()
+        password = st.session_state["password"]
+
+        # בודק אם השם קיים ב-Secrets ואם הסיסמה תואמת
+        if "passwords" in st.secrets and username in st.secrets["passwords"] and str(
+                st.secrets["passwords"][username]) == str(password):
+            st.session_state["password_correct"] = True
+            st.session_state["logged_in_user"] = username  # שמירת שם המשתמש לברכת שלום
+            del st.session_state["password"]  # מוחק את הסיסמה מהזיכרון לאבטחה
+        else:
+            st.session_state["password_correct"] = False
+
+    if "password_correct" not in st.session_state:
+        # מצב התחלתי: הצגת טופס התחברות
+        st.title("התחברות למערכת הניווט 🔒")
+        st.text_input("שם משתמש", key="username")
+        st.text_input("סיסמה", type="password", key="password")
+        st.button("הכנס", on_click=password_entered)
+        return False
+
+    elif not st.session_state["password_correct"]:
+        # מצב שגיאה: סיסמה לא נכונה
+        st.title("התחברות למערכת הניווט 🔒")
+        st.text_input("שם משתמש", key="username")
+        st.text_input("סיסמה", type="password", key="password")
+        st.button("הכנס", on_click=password_entered)
+        st.error("שם משתמש או סיסמה שגויים. נסה שוב או פנה למנהל המערכת.")
+        return False
+
+    else:
+        # מצב מחובר: אפשר להמשיך!
+        return True
+
+
+# --- עצירת הקוד אם המשתמש לא מחובר ---
+if not check_password():
+    st.stop()
+
+# ==========================================
+# --- הגדרות האפליקציה הראשיות ---
+# ==========================================
 BASE_URL = "http://routing.decell.com:8080/route"
 CSV_FILE_PATH = "database.csv"
 ID_COLUMN_NAME = "UserID"
 COLUMNS_TO_DISPLAY = ["RoadFuncti", "RoadType", "Flag"]
-
-st.set_page_config(page_title="Route Generator", layout="wide")
 
 
 # --- פונקציות עזר וטעינת נתונים ---
@@ -26,6 +76,10 @@ def clean_id(val):
 
 @st.cache_data
 def load_database():
+    import os
+    if not os.path.exists(CSV_FILE_PATH):
+        return pd.DataFrame()
+
     encodings_to_try = ['utf-8-sig', 'cp1255', 'latin-1']
     for enc in encodings_to_try:
         try:
@@ -33,7 +87,6 @@ def load_database():
             df.columns = df.columns.str.strip()
             if ID_COLUMN_NAME in df.columns:
                 df[ID_COLUMN_NAME] = df[ID_COLUMN_NAME].apply(clean_id)
-                # מניעת כפילויות במזהים כדי למנוע שגיאות שליפה
                 df.drop_duplicates(subset=[ID_COLUMN_NAME], keep='first', inplace=True)
                 df.set_index(ID_COLUMN_NAME, inplace=True)
                 return df
@@ -47,7 +100,7 @@ db_data = load_database()
 # --- ניהול זיכרון של האפליקציה (Session State) ---
 if 'start_coords' not in st.session_state: st.session_state.start_coords = None
 if 'end_coords' not in st.session_state: st.session_state.end_coords = None
-if 'search_coords' not in st.session_state: st.session_state.search_coords = None  # סמן החיפוש חזר!
+if 'search_coords' not in st.session_state: st.session_state.search_coords = None
 if 'map_center' not in st.session_state: st.session_state.map_center = [31.5, 34.8]
 if 'map_zoom' not in st.session_state: st.session_state.map_zoom = 7
 if 'paths_to_draw' not in st.session_state: st.session_state.paths_to_draw = []
@@ -56,6 +109,10 @@ if 'last_clicked' not in st.session_state: st.session_state.last_clicked = None
 
 # --- ממשק משתמש (תפריט צד) ---
 st.sidebar.title("הגדרות ניווט 🗺️")
+
+# פיצ'ר חמוד: הודעת ברוך הבא אישית למשתמש המחובר
+current_user = st.session_state.get("logged_in_user", "אורח")
+st.sidebar.markdown(f"👋 שלום, **{current_user.capitalize()}**")
 
 # חיווי סטטוס מסד הנתונים
 if not db_data.empty:
@@ -72,7 +129,7 @@ if st.sidebar.button("חפש במפה"):
         if location:
             st.session_state.map_center = [location.latitude, location.longitude]
             st.session_state.map_zoom = 15
-            st.session_state.search_coords = [location.latitude, location.longitude]  # שמירת מיקום החיפוש
+            st.session_state.search_coords = [location.latitude, location.longitude]
             st.sidebar.success("הכתובת נמצאה!")
         else:
             st.sidebar.error("הכתובת לא נמצאה.")
@@ -119,6 +176,7 @@ if st.sidebar.button("🚀 הצג מסלול", type="primary"):
             paths = []
             all_lats, all_lons = [], []
 
+            # חילוץ סיכום מסלול
             for elem in root_xml.iter():
                 if 'description' in elem.tag and elem.text and "distanceMeters" in elem.text:
                     parts = elem.text.split(',')
@@ -134,6 +192,7 @@ if st.sidebar.button("🚀 הצג מסלול", type="primary"):
                     }
                     break
 
+            # עיבוד המקטעים
             for placemark in root_xml.iter():
                 if 'Placemark' in placemark.tag:
                     segment_name = "ללא שם"
@@ -200,6 +259,7 @@ if st.session_state.end_coords:
 for p in st.session_state.paths_to_draw:
     folium.PolyLine(p["coords"], color="purple", weight=5, tooltip=p["tooltip"]).add_to(m)
 
+# הצגת המפה באתר ותפיסת לחיצות
 map_data = st_folium(m, height=500, width=1000)
 
 if map_data and map_data.get("last_clicked"):
