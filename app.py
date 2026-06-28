@@ -106,15 +106,37 @@ if 'map_zoom' not in st.session_state: st.session_state.map_zoom = 7
 if 'paths_to_draw' not in st.session_state: st.session_state.paths_to_draw = []
 if 'route_summary' not in st.session_state: st.session_state.route_summary = None
 if 'last_clicked' not in st.session_state: st.session_state.last_clicked = None
+if 'route_history' not in st.session_state: st.session_state.route_history = []  # רשימת היסטוריית מסלולים
+
+
+# --- פונקציה להוספת מסלול להיסטוריה ---
+def add_to_history(start, end, summary, paths, center, zoom):
+    # יוצר רשומה חדשה של מסלול
+    new_route = {
+        "start": start,
+        "end": end,
+        "summary": summary,
+        "paths": paths,
+        "center": center,
+        "zoom": zoom
+    }
+    # מוודא שלא נכניס בדיוק את אותו מסלול פעמיים ברצף
+    if st.session_state.route_history and st.session_state.route_history[0]["summary"] == summary:
+        return
+
+    # מוסיף לראש הרשימה
+    st.session_state.route_history.insert(0, new_route)
+    # שומר רק את 5 האחרונים
+    if len(st.session_state.route_history) > 5:
+        st.session_state.route_history.pop()
+
 
 # --- ממשק משתמש (תפריט צד) ---
 st.sidebar.title("הגדרות ניווט 🗺️")
 
-# פיצ'ר חמוד: הודעת ברוך הבא אישית למשתמש המחובר
 current_user = st.session_state.get("logged_in_user", "אורח")
 st.sidebar.markdown(f"👋 שלום, **{current_user.capitalize()}**")
 
-# חיווי סטטוס מסד הנתונים
 if not db_data.empty:
     st.sidebar.success(f"✅ מסד נתונים מחובר ({len(db_data)} רשומות)")
 else:
@@ -130,7 +152,7 @@ if st.sidebar.button("חפש במפה"):
             st.session_state.map_center = [location.latitude, location.longitude]
             st.session_state.map_zoom = 15
             st.session_state.search_coords = [location.latitude, location.longitude]
-            st.sidebar.success("הכתובת נמצאה!")
+            st.sidebar.success("הכתובתמצאה!")
         else:
             st.sidebar.error("הכתובת לא נמצאה.")
     except Exception as e:
@@ -156,6 +178,29 @@ if st.sidebar.button("⇅ החלף כיוון"):
     st.session_state.route_summary = None
     st.rerun()
 
+# --- תצוגת היסטוריית מסלולים בתפריט הצד ---
+if st.session_state.route_history:
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("⏳ **מסלולים אחרונים (עד 5):**")
+
+    for idx, hist_route in enumerate(st.session_state.route_history):
+        # יצירת כפתור שורה יפה לכל מסלול בהיסטוריה
+        col_text, col_btn = st.sidebar.columns([3, 1])
+        with col_text:
+            sm = hist_route["summary"]
+            st.write(f"**מסלול {idx + 1}:** {sm['km']} ק\"מ ({sm['mins']} דק')")
+        with col_btn:
+            # לחיצה על כפתור טעינה משחזרת הכל מהזיכרון מיד
+            if st.button("טען 🔄", key=f"hist_{idx}"):
+                st.session_state.start_coords = hist_route["start"]
+                st.session_state.end_coords = hist_route["end"]
+                st.session_state.route_summary = hist_route["summary"]
+                st.session_state.paths_to_draw = hist_route["paths"]
+                st.session_state.map_center = hist_route["center"]
+                st.session_state.map_zoom = hist_route["zoom"]
+                st.session_state.search_coords = None
+                st.rerun()
+
 # --- לוגיקת יצירת מסלול ---
 if st.sidebar.button("🚀 הצג מסלול", type="primary"):
     if not st.session_state.start_coords or not st.session_state.end_coords:
@@ -175,6 +220,7 @@ if st.sidebar.button("🚀 הצג מסלול", type="primary"):
 
             paths = []
             all_lats, all_lons = [], []
+            summary_data = None
 
             # חילוץ סיכום מסלול
             for elem in root_xml.iter():
@@ -186,10 +232,11 @@ if st.sidebar.button("🚀 הצג מסלול", type="primary"):
                             meters = float(p.split(':')[1].strip())
                         elif "ettInSeconds" in p:
                             seconds = float(p.split(':')[1].strip())
-                    st.session_state.route_summary = {
+                    summary_data = {
                         "km": round(meters / 1000, 2),
                         "mins": round(seconds / 60)
                     }
+                    st.session_state.route_summary = summary_data
                     break
 
             # עיבוד המקטעים
@@ -231,6 +278,18 @@ if st.sidebar.button("🚀 הצג מסלול", type="primary"):
                 st.session_state.map_center = [(min(all_lats) + max(all_lats)) / 2, (min(all_lons) + max(all_lons)) / 2]
                 st.session_state.map_zoom = 11
 
+            # שמירה להיסטוריה במידה והמסלול חושב בהצלחה
+            if summary_data:
+                add_to_history(
+                    st.session_state.start_coords,
+                    st.session_state.end_coords,
+                    summary_data,
+                    st.session_state.paths_to_draw,
+                    st.session_state.map_center,
+                    st.session_state.map_zoom
+                )
+            st.rerun()  # ריענון מיידי להצגת ההיסטוריה החדשה בצד
+
         except Exception as e:
             st.sidebar.error(f"שגיאה בתקשורת או בעיבוד: {e}")
 
@@ -243,7 +302,6 @@ if st.session_state.route_summary:
 
 m = folium.Map(location=st.session_state.map_center, zoom_start=st.session_state.map_zoom)
 
-# הצגת סמן חיפוש אפור אם קיים
 if st.session_state.search_coords:
     folium.Marker(
         st.session_state.search_coords,
