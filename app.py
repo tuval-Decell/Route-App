@@ -331,7 +331,7 @@ for p in st.session_state.paths_to_draw:
     folium.PolyLine(p["coords"], color="purple", weight=5, tooltip=p["tooltip"]).add_to(m)
 
 # הצגת המפה באתר ותפיסת לחיצות
-map_data = st_folium(m, height=500, use_container_width=True)
+map_data = st_folium(m, height=550, use_container_width=True)
 
 if map_data and map_data.get("last_clicked"):
     current_click = map_data["last_clicked"]
